@@ -112,7 +112,7 @@ main(void)
 		tmutc = mktimes("%H:%M", tzutc);
 		tmbln = mktimes("KW %W %a %d %b %H:%M %Z %Y", tzberlin);
 
-		status = smprintf("L:%s A:%s U:%s %s]",
+		status = smprintf("L:%s A:%s U:%s %s",
 				avgs, tmar, tmutc, tmbln);
 		setstatus(status);
 		free(avgs);
