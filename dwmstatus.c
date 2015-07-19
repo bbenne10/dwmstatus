@@ -12,7 +12,9 @@
 
 #include <X11/Xlib.h>
 
-char *tzargentina = "America/Buenos_Aires";
+char *sysbat = "/sys/class/power_supply/BAT0/capacity";
+char *tzsf = "US/Pacific";
+char *tztokyo= "Japan";
 char *tzutc = "UTC";
 char *tzberlin = "Europe/Berlin";
 
@@ -80,6 +82,22 @@ setstatus(char *str)
 }
 
 char *
+batcap(void)
+{
+	char cap[16], *r = NULL;
+	FILE *f = fopen(sysbat, "r");
+
+	memset(cap, 1, sizeof cap);
+	if (f) {
+		r = fgets(cap, sizeof cap, f);
+		if (r == cap)
+			cap[strlen(cap)-1] = '\0';
+		fclose(f);
+	}
+	return smprintf("%s%%", r != NULL ? r : "?");
+}
+
+char *
 loadavg(void)
 {
 	double avgs[3];
@@ -95,9 +113,11 @@ loadavg(void)
 int
 main(void)
 {
+	char *cap;
 	char *status;
 	char *avgs;
-	char *tmar;
+	char *tmsf;
+	char *tmtokyo;
 	char *tmutc;
 	char *tmbln;
 
@@ -107,16 +127,19 @@ main(void)
 	}
 
 	for (;;sleep(90)) {
+		cap = batcap();
 		avgs = loadavg();
-		tmar = mktimes("%H:%M", tzargentina);
+		tmsf = mktimes("%H:%M", tzsf);
+		tmtokyo = mktimes("%H:%M", tztokyo);
 		tmutc = mktimes("%H:%M", tzutc);
 		tmbln = mktimes("KW %W %a %d %b %H:%M %Z %Y", tzberlin);
 
-		status = smprintf("L:%s A:%s U:%s %s",
-				avgs, tmar, tmutc, tmbln);
+		status = smprintf("B:%s L:%s SF:%s JP:%s U:%s %s",
+				cap, avgs, tmsf, tmtokyo, tmutc, tmbln);
 		setstatus(status);
 		free(avgs);
-		free(tmar);
+		free(tmsf);
+		free(tmtokyo);
 		free(tmutc);
 		free(tmbln);
 		free(status);
