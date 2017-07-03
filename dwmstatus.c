@@ -1,4 +1,4 @@
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,121 +9,162 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include <X11/Xlib.h>
-
-char *tzargentina = "America/Buenos_Aires";
-char *tzutc = "UTC";
-char *tzberlin = "Europe/Berlin";
+#include <mpd/client.h>
+#include <notmuch.h>
 
 static Display *dpy;
+static int numCores;
+
+#define NM_DB_PATH "/home/bryan/.mail/work"
 
 char *
-smprintf(char *fmt, ...)
-{
-	va_list fmtargs;
-	char *ret;
-	int len;
+smprintf(char *fmt, ...) {
+  va_list fmtargs;
+  char *ret;
+  int len;
 
-	va_start(fmtargs, fmt);
-	len = vsnprintf(NULL, 0, fmt, fmtargs);
-	va_end(fmtargs);
+  va_start(fmtargs, fmt);
+  len = vsnprintf(NULL, 0, fmt, fmtargs);
+  va_end(fmtargs);
 
-	ret = malloc(++len);
-	if (ret == NULL) {
-		perror("malloc");
-		exit(1);
-	}
+  ret = malloc(++len);
+  if (ret == NULL) {
+    perror("malloc");
+    exit(1);
+  }
 
-	va_start(fmtargs, fmt);
-	vsnprintf(ret, len, fmt, fmtargs);
-	va_end(fmtargs);
+  va_start(fmtargs, fmt);
+  vsnprintf(ret, len, fmt, fmtargs);
+  va_end(fmtargs);
 
-	return ret;
+  return ret;
 }
 
 void
-settz(char *tzname)
-{
-	setenv("TZ", tzname, 1);
+setStatus(char *str) {
+  XStoreName(dpy, DefaultRootWindow(dpy), str);
+  XSync(dpy, False);
 }
 
 char *
-mktimes(char *fmt, char *tzname)
-{
-	char buf[129];
-	time_t tim;
-	struct tm *timtm;
+getLoadAvg() {
+  double avgs[1];
 
-	memset(buf, 0, sizeof(buf));
-	settz(tzname);
-	tim = time(NULL);
-	timtm = localtime(&tim);
-	if (timtm == NULL) {
-		perror("localtime");
-		exit(1);
-	}
+  if (getloadavg(avgs, 1) < 0) {
+    perror("getloadavg");
+    exit(1);
+  }
 
-	if (!strftime(buf, sizeof(buf)-1, fmt, timtm)) {
-		fprintf(stderr, "strftime == 0\n");
-		exit(1);
-	}
-
-	return smprintf("%s", buf);
-}
-
-void
-setstatus(char *str)
-{
-	XStoreName(dpy, DefaultRootWindow(dpy), str);
-	XSync(dpy, False);
+  return smprintf("%d%%", (int)((avgs[0] * 100 / numCores)));
 }
 
 char *
-loadavg(void)
-{
-	double avgs[3];
+getMpd() {
+    struct mpd_song * song = NULL;
+	const char * title = NULL;
+	const char * artist = NULL;
+	char * retstr = NULL;
 
-	if (getloadavg(avgs, 3) < 0) {
-		perror("getloadavg");
-		exit(1);
-	}
+  struct mpd_connection * conn ;
+  if (!(conn = mpd_connection_new("localhost", 0, 30000)) ||
+      mpd_connection_get_error(conn)){
+    return smprintf("");
+  }
 
-	return smprintf("%.2f %.2f %.2f", avgs[0], avgs[1], avgs[2]);
+  mpd_command_list_begin(conn, true);
+  mpd_send_status(conn);
+  mpd_send_current_song(conn);
+  mpd_command_list_end(conn);
+
+  struct mpd_status* theStatus = mpd_recv_status(conn);
+  if ((theStatus) && (mpd_status_get_state(theStatus) == MPD_STATE_PLAY)) {
+    mpd_response_next(conn);
+    song = mpd_recv_song(conn);
+    title = smprintf("%s",mpd_song_get_tag(song, MPD_TAG_TITLE, 0));
+    artist = smprintf("%s",mpd_song_get_tag(song, MPD_TAG_ARTIST, 0));
+
+    mpd_song_free(song);
+    retstr = smprintf("%s - %s", artist, title);
+    free((char*)title);
+    free((char*)artist);
+  } else {
+    retstr = smprintf("");
+  }
+  mpd_response_finish(conn);
+  mpd_connection_free(conn);
+  return retstr;
+}
+
+unsigned int
+getMailCount() {
+  notmuch_database_t *db;
+  notmuch_status_t status = notmuch_database_open(NM_DB_PATH,
+                                                  NOTMUCH_DATABASE_MODE_READ_ONLY,
+                                                  &db);
+  unsigned int count;
+  if (status != NOTMUCH_STATUS_SUCCESS) {
+    fprintf(stderr, "Failed to open nm database\n");
+    count = 0;
+  } else {
+    notmuch_query_t * query = notmuch_query_create(db, "tag:inbox and tag:unread");
+    status = notmuch_query_count_messages_st(query, &count);
+
+    if (status != NOTMUCH_STATUS_SUCCESS) {
+      fprintf(stderr, "Failed to issue count query\n");
+      count = 0;
+    }
+    notmuch_database_close(db);
+  }
+
+  return count;
 }
 
 int
-main(void)
-{
-	char *status;
-	char *avgs;
-	char *tmar;
-	char *tmutc;
-	char *tmbln;
+main(void) {
+  char * status;
 
-	if (!(dpy = XOpenDisplay(NULL))) {
-		fprintf(stderr, "dwmstatus: cannot open display.\n");
-		return 1;
-	}
+  unsigned int numMails;
+  char * mailColor = "#928374";
 
-	for (;;sleep(90)) {
-		avgs = loadavg();
-		tmar = mktimes("%H:%M", tzargentina);
-		tmutc = mktimes("%H:%M", tzutc);
-		tmbln = mktimes("KW %W %a %d %b %H:%M %Z %Y", tzberlin);
+  char * sysAvg;
+  char * mpdStatus;
 
-		status = smprintf("L:%s A:%s U:%s %s",
-				avgs, tmar, tmutc, tmbln);
-		setstatus(status);
-		free(avgs);
-		free(tmar);
-		free(tmutc);
-		free(tmbln);
-		free(status);
-	}
+  // TODO: Weather
+  // TODO: Volume?
+  // TODO: Battery (will need to be done at home)
 
-	XCloseDisplay(dpy);
+  if (!(dpy = XOpenDisplay(NULL))) {
+    fprintf(stderr, "dwmstatus: cannot open display.\n");
+    return 1;
+  }
 
-	return 0;
+  numCores = sysconf(_SC_NPROCESSORS_ONLN);
+
+  for (;;sleep(10)) {
+    sysAvg = getLoadAvg();
+    mpdStatus = getMpd();
+
+    numMails = getMailCount();
+    if (numMails > 0) {
+      mailColor = "#fb4934";
+    }
+
+    status = smprintf("<span color='%s'>&#xf0e0;</span>  %d  "
+                      "<span color='#98971a'>&#xf2b6; </span> %s  " // music
+                      "<span color='#b16286'>&#xf0e7; </span> %s  ", // 1min loadAvg
+                      mailColor, numMails,
+                      mpdStatus,
+                      sysAvg);
+    setStatus(status);
+    free(sysAvg);
+    free(mpdStatus);
+    free(status);
+  }
+
+  XCloseDisplay(dpy);
+
+  return 0;
 }
-
