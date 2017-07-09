@@ -15,10 +15,12 @@
 #include <mpd/client.h>
 #include <notmuch.h>
 
+#define NM_DB_PATH "/home/bryan/.mail/work"
+
 static Display *dpy;
 static int numCores;
-
-#define NM_DB_PATH "/home/bryan/.mail/work"
+static int checkMail = 1;
+static int checkMPD = 1;
 
 char *
 smprintf(char *fmt, ...) {
@@ -58,19 +60,20 @@ getLoadAvg() {
     exit(1);
   }
 
-  return smprintf("%d%%", (int)((avgs[0] * 100 / numCores)));
+  return smprintf("<span color='#b16286'>&#xf0e7;</span> %d%%", (int)((avgs[0] * 100 / numCores)));
 }
 
 char *
 getMpd() {
-    struct mpd_song * song = NULL;
-	const char * title = NULL;
-	const char * artist = NULL;
-	char * retstr = NULL;
+  struct mpd_song * song = NULL;
+  const char * title = NULL;
+  const char * artist = NULL;
+  char * retstr = NULL;
 
   struct mpd_connection * conn ;
-  if (!(conn = mpd_connection_new("localhost", 0, 30000)) ||
-      mpd_connection_get_error(conn)){
+  if (!(conn = mpd_connection_new("localhost", 0, 30000)) || mpd_connection_get_error(conn)){
+    checkMPD = 0;
+    fprintf(stderr, "Could not connect to MPD");
     return smprintf("");
   }
 
@@ -87,50 +90,57 @@ getMpd() {
     artist = smprintf("%s",mpd_song_get_tag(song, MPD_TAG_ARTIST, 0));
 
     mpd_song_free(song);
-    retstr = smprintf("%s - %s", artist, title);
+    retstr = smprintf("<span color='#00ff00'>&#xf286;</span> %s - %s", artist, title);
     free((char*)title);
     free((char*)artist);
   } else {
     retstr = smprintf("");
+    checkMPD = 0;
   }
+
   mpd_response_finish(conn);
   mpd_connection_free(conn);
   return retstr;
 }
 
-unsigned int
-getMailCount() {
+char *
+getMail() {
   notmuch_database_t *db;
-  notmuch_status_t status = notmuch_database_open(NM_DB_PATH,
-                                                  NOTMUCH_DATABASE_MODE_READ_ONLY,
-                                                  &db);
-  unsigned int count;
+  notmuch_status_t status = notmuch_database_open(
+                                                  NM_DB_PATH, NOTMUCH_DATABASE_MODE_READ_ONLY, &db);
+  notmuch_query_t * query;
+  unsigned int count = 0;
+  char * retstr = smprintf("");
+
   if (status != NOTMUCH_STATUS_SUCCESS) {
     fprintf(stderr, "Failed to open nm database\n");
-    count = 0;
+    checkMail = 0;
   } else {
-    notmuch_query_t * query = notmuch_query_create(db, "tag:inbox and tag:unread");
+    query = notmuch_query_create(db, "tag:inbox and tag:unread");
     status = notmuch_query_count_messages_st(query, &count);
-
     if (status != NOTMUCH_STATUS_SUCCESS) {
       fprintf(stderr, "Failed to issue count query\n");
-      count = 0;
+      checkMail = 0;
+    }
+
+    if (count > 0) {
+      retstr = smprintf("<span color='#ff00ff'>&#xf0e0;</span>");
+    } else {
+      retstr = "";
     }
     notmuch_database_close(db);
   }
 
-  return count;
+  return retstr;
 }
 
 int
 main(void) {
   char * status;
 
-  unsigned int numMails;
-  char * mailColor = "#928374";
-
   char * sysAvg;
   char * mpdStatus;
+  char * mail;
 
   // TODO: Weather
   // TODO: Volume?
@@ -145,19 +155,17 @@ main(void) {
 
   for (;;sleep(10)) {
     sysAvg = getLoadAvg();
-    mpdStatus = getMpd();
 
-    numMails = getMailCount();
-    if (numMails > 0) {
-      mailColor = "#fb4934";
+    if (checkMPD) {
+      mpdStatus = getMpd();
     }
 
-    status = smprintf("<span color='%s'>&#xf0e0;</span>  %d  "
-                      "<span color='#98971a'>&#xf2b6; </span> %s  " // music
-                      "<span color='#b16286'>&#xf0e7; </span> %s  ", // 1min loadAvg
-                      mailColor, numMails,
-                      mpdStatus,
-                      sysAvg);
+    if (checkMail) {
+      mail = getMail();
+    }
+
+    status = smprintf("%s  %s  %s",
+                      mail, mpdStatus, sysAvg);
     setStatus(status);
     free(sysAvg);
     free(mpdStatus);
