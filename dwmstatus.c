@@ -136,7 +136,7 @@ getBatt(char *base) {
     icon = "&#xf243;";
   }
 
-	return smprintf("<span color='#689da6'> %s</span>%.0f%%",
+	return smprintf("<span color='#689da6'>%s</span> %.0f%% ",
                   icon, ((float)remcap / (float)descap) * 100);
 }
 
@@ -179,12 +179,11 @@ getMpd() {
     artist = smprintf("%s",mpd_song_get_tag(song, MPD_TAG_ARTIST, 0));
 
     mpd_song_free(song);
-    retstr = smprintf("<span color='#00ff00'>&#xf286;</span> %s - %s", artist, title);
+    retstr = smprintf("<span color='#00ff00'>&#xf286;</span> %s - %s  ", artist, title);
     free((char*)title);
     free((char*)artist);
   } else {
     retstr = smprintf("");
-    checkMPD = 0;
   }
 
   mpd_response_finish(conn);
@@ -213,7 +212,7 @@ getMail() {
     }
 
     if (count > 0) {
-      retstr = smprintf("<span color='#ff00ff'>&#xf0e0;</span>");
+      retstr = smprintf("<span color='#ff00ff'>&#xf0e0;</span>  ");
     } else {
       retstr = "";
     }
@@ -256,7 +255,7 @@ main(void) {
       batt = getBatt(BATT_PATH);
     }
 
-    status = smprintf("%s  %s  %s  %s",
+    status = smprintf("%s%s%s%s",
                       mail, batt, mpdStatus, sysAvg);
     setStatus(status);
     free(sysAvg);
