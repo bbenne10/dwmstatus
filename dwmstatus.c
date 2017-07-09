@@ -16,11 +16,13 @@
 #include <notmuch.h>
 
 #define NM_DB_PATH "/home/bryan/.mail/work"
+#define BATT_PATH "/sys/class/power_supply/BAT0"
 
 static Display *dpy;
 static int numCores;
 static int checkMail = 1;
 static int checkMPD = 1;
+static int checkBatt = 1;
 
 char *
 smprintf(char *fmt, ...) {
@@ -45,10 +47,97 @@ smprintf(char *fmt, ...) {
   return ret;
 }
 
+char *
+readLineFromFile(char *base, char *file) {
+	char *path, line[513];
+	FILE *fd;
+
+	memset(line, 0, sizeof(line));
+
+	path = smprintf("%s/%s", base, file);
+	fd = fopen(path, "r");
+	if (fd == NULL) {
+		return NULL;
+  }
+	free(path);
+
+	if (fgets(line, sizeof(line)-1, fd) == NULL) {
+		return NULL;
+  }
+	fclose(fd);
+
+	return smprintf("%s", line);
+}
+
 void
 setStatus(char *str) {
   XStoreName(dpy, DefaultRootWindow(dpy), str);
   XSync(dpy, False);
+}
+
+char *
+getBatt(char *base) {
+	char *co;
+	int descap, remcap;
+
+	descap = -1;
+	remcap = -1;
+
+	co = readLineFromFile(base, "present");
+	if (co == NULL || co[0] != '1') {
+		if (co != NULL) {
+      free(co);
+    }
+    fprintf(stderr, "No battery found");
+    checkBatt = 0;
+		return smprintf("");
+	}
+	free(co);
+
+	co = readLineFromFile(base, "charge_full_design");
+	if (co == NULL) {
+		co = readLineFromFile(base, "energy_full_design");
+		if (co == NULL) {
+      checkBatt = 0;
+      fprintf(stderr, "No battery full file found");
+			return smprintf("");
+    }
+	}
+	sscanf(co, "%d", &descap);
+	free(co);
+
+	co = readLineFromFile(base, "charge_now");
+	if (co == NULL) {
+		co = readLineFromFile(base, "energy_now");
+		if (co == NULL) {
+      checkBatt = 0;
+      fprintf(stderr, "No battery now file found");
+			return smprintf("");
+    }
+	}
+	sscanf(co, "%d", &remcap);
+	free(co);
+
+	if (remcap < 0 || descap < 0) {
+    checkBatt = 0;
+    fprintf(stderr, "Invalid battery range found");
+    return smprintf("");
+  }
+
+  float perc = ((float)remcap / (float)descap) * 100;
+  char * icon;
+  if (perc > 75) {
+    icon = "&#xf239;";
+  } else if (perc > 50) {
+    icon = "&#xf241;";
+  } else if (perc > 25) {
+    icon = "&#xf242;";
+  } else {
+    icon = "&#xf243;";
+  }
+
+	return smprintf("<span color='#689da6'> %s</span>%.0f%%",
+                  icon, ((float)remcap / (float)descap) * 100);
 }
 
 char *
@@ -137,14 +226,13 @@ getMail() {
 int
 main(void) {
   char * status;
-
   char * sysAvg;
   char * mpdStatus;
   char * mail;
+  char * batt;
 
   // TODO: Weather
   // TODO: Volume?
-  // TODO: Battery (will need to be done at home)
 
   if (!(dpy = XOpenDisplay(NULL))) {
     fprintf(stderr, "dwmstatus: cannot open display.\n");
@@ -164,11 +252,19 @@ main(void) {
       mail = getMail();
     }
 
-    status = smprintf("%s  %s  %s",
-                      mail, mpdStatus, sysAvg);
+    if (checkBatt) {
+      batt = getBatt(BATT_PATH);
+    }
+
+    status = smprintf("%s  %s  %s  %s",
+                      mail, batt, mpdStatus, sysAvg);
     setStatus(status);
     free(sysAvg);
     free(mpdStatus);
+    if (checkBatt) {
+      free(batt);
+    }
+
     free(status);
   }
 
