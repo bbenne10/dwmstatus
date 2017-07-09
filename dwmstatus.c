@@ -49,24 +49,24 @@ smprintf(char *fmt, ...) {
 
 char *
 readLineFromFile(char *base, char *file) {
-	char *path, line[513];
-	FILE *fd;
+  char *path, line[513];
+  FILE *fd;
 
-	memset(line, 0, sizeof(line));
+  memset(line, 0, sizeof(line));
 
-	path = smprintf("%s/%s", base, file);
-	fd = fopen(path, "r");
-	if (fd == NULL) {
-		return NULL;
+  path = smprintf("%s/%s", base, file);
+  fd = fopen(path, "r");
+  if (fd == NULL) {
+    return NULL;
   }
-	free(path);
+  free(path);
 
-	if (fgets(line, sizeof(line)-1, fd) == NULL) {
-		return NULL;
+  if (fgets(line, sizeof(line)-1, fd) == NULL) {
+    return NULL;
   }
-	fclose(fd);
+  fclose(fd);
 
-	return smprintf("%s", line);
+  return smprintf("%s", line);
 }
 
 void
@@ -77,48 +77,48 @@ setStatus(char *str) {
 
 char *
 getBatt(char *base) {
-	char *co;
-	int descap, remcap;
+  char *co;
+  int descap, remcap;
 
-	descap = -1;
-	remcap = -1;
+  descap = -1;
+  remcap = -1;
 
-	co = readLineFromFile(base, "present");
-	if (co == NULL || co[0] != '1') {
-		if (co != NULL) {
+  co = readLineFromFile(base, "present");
+  if (co == NULL || co[0] != '1') {
+    if (co != NULL) {
       free(co);
     }
     fprintf(stderr, "No battery found");
     checkBatt = 0;
-		return smprintf("");
-	}
-	free(co);
+    return smprintf("");
+  }
+  free(co);
 
-	co = readLineFromFile(base, "charge_full_design");
-	if (co == NULL) {
-		co = readLineFromFile(base, "energy_full_design");
-		if (co == NULL) {
+  co = readLineFromFile(base, "charge_full_design");
+  if (co == NULL) {
+    co = readLineFromFile(base, "energy_full_design");
+    if (co == NULL) {
       checkBatt = 0;
       fprintf(stderr, "No battery full file found");
-			return smprintf("");
+      return smprintf("");
     }
-	}
-	sscanf(co, "%d", &descap);
-	free(co);
+  }
+  sscanf(co, "%d", &descap);
+  free(co);
 
-	co = readLineFromFile(base, "charge_now");
-	if (co == NULL) {
-		co = readLineFromFile(base, "energy_now");
-		if (co == NULL) {
+  co = readLineFromFile(base, "charge_now");
+  if (co == NULL) {
+    co = readLineFromFile(base, "energy_now");
+    if (co == NULL) {
       checkBatt = 0;
       fprintf(stderr, "No battery now file found");
-			return smprintf("");
+      return smprintf("");
     }
-	}
-	sscanf(co, "%d", &remcap);
-	free(co);
+  }
+  sscanf(co, "%d", &remcap);
+  free(co);
 
-	if (remcap < 0 || descap < 0) {
+  if (remcap < 0 || descap < 0) {
     checkBatt = 0;
     fprintf(stderr, "Invalid battery range found");
     return smprintf("");
@@ -136,7 +136,7 @@ getBatt(char *base) {
     icon = "&#xf243;";
   }
 
-	return smprintf("<span color='#689da6'>%s</span> %.0f%% ",
+  return smprintf("<span color='#689da6'>%s</span> %.0f%% ",
                   icon, ((float)remcap / (float)descap) * 100);
 }
 
@@ -172,6 +172,7 @@ getMpd() {
   mpd_command_list_end(conn);
 
   struct mpd_status* theStatus = mpd_recv_status(conn);
+
   if ((theStatus) && (mpd_status_get_state(theStatus) == MPD_STATE_PLAY)) {
     mpd_response_next(conn);
     song = mpd_recv_song(conn);
