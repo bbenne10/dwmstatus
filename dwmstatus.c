@@ -260,7 +260,15 @@ main(void) {
                       mail, batt, mpdStatus, sysAvg);
     setStatus(status);
     free(sysAvg);
-    free(mpdStatus);
+
+    if (checkMPD) {
+      free(mpdStatus);
+    }
+
+    if (checkMail) {
+      free(mail);
+    }
+
     if (checkBatt) {
       free(batt);
     }
