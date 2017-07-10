@@ -10,6 +10,7 @@ Included:
 * **battery:** read from files under /sys
 * **mail:** As reported by notmuch
 * **media:** As reported by mpd/mopidy
+* **weather:** Reported by parsing Accuweather's RSS feed
 
 ## Presumptions
 
@@ -23,6 +24,7 @@ to use `pango_layout_set_markup` and `pango_xft_render_layout`, as I believe the
 * Make sure you've got the right headers (remember that you may need to install `-dev` or `-devel` packages on your distro to be able to link against them
     - libnotmuch
     - libmpdclient
+    - libcurl
 * Modify `dwmstatus.c` to fit your machine (the import bits are `#defines` at the top-ish)
 * `make`
 * Put the binary somewhere
