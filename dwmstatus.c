@@ -261,15 +261,15 @@ main(void) {
     setStatus(status);
     free(sysAvg);
 
-    if (checkMPD) {
+    if (mpdStatus != NULL && strcmp(mpdStatus, "")) {
       free(mpdStatus);
     }
 
-    if (checkMail) {
+    if (mail != NULL && strcmp(mail, "")) {
       free(mail);
     }
 
-    if (checkBatt) {
+    if (batt != NULL && strcmp(batt, "")) {
       free(batt);
     }
 
