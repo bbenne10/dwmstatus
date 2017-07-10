@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE
 #include <unistd.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -11,18 +12,29 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <curl/curl.h>
 #include <X11/Xlib.h>
 #include <mpd/client.h>
 #include <notmuch.h>
 
 #define NM_DB_PATH "/home/bryan/.mail/work"
 #define BATT_PATH "/sys/class/power_supply/BAT0"
+#define WEATHER_CHECK_INT 1800
+#define WEATHER_CHECK_LOC "30032"
+#define WEATHER_CHECK_METRIC 0
 
 static Display *dpy;
 static int numCores;
 static int checkMail = 1;
 static int checkMPD = 1;
 static int checkBatt = 1;
+static CURL *curl;
+static regex_t weatherRe;
+
+struct MemoryStruct {
+  char * memory;
+  size_t size;
+};
 
 char *
 smprintf(char *fmt, ...) {
@@ -223,6 +235,63 @@ getMail() {
   return retstr;
 }
 
+static size_t
+weatherWriteCB(void *contents, size_t size, size_t nmemb, void * userp) {
+  size_t realsize = size * nmemb;
+  struct MemoryStruct *mem = (struct MemoryStruct *)userp;
+
+  mem->memory = realloc(mem->memory, mem->size + realsize + 1);
+  if(mem->memory == NULL) {
+    /* out of memory! */
+    fprintf(stderr, "not enough memory (realloc returned NULL)\n");
+    return 0;
+  }
+
+  memcpy(&(mem->memory[mem->size]), contents, realsize);
+  mem->size += realsize;
+  mem->memory[mem->size] = 0;
+
+  return realsize;
+}
+
+char *
+getWeather() {
+  char weatherURI[128];
+  struct MemoryStruct chunk;
+  CURLcode res;
+
+  char * retstr = smprintf("");
+  chunk.memory = malloc(1);
+  chunk.size = 0;
+
+  snprintf(weatherURI, sizeof(weatherURI),
+           "http://rss.accuweather.com/rss/liveweather_rss.asp?metric=%d&locCode=%s",
+           WEATHER_CHECK_METRIC, WEATHER_CHECK_LOC);
+
+  curl_easy_setopt(curl, CURLOPT_URL, weatherURI);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, weatherWriteCB);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+
+  res = curl_easy_perform(curl);
+  if (res != CURLE_OK) {
+    fprintf(stderr, "Failed to perform request to weather URI\n");
+  } else {
+    regmatch_t pmatch[3];
+    int regRet = regexec(&weatherRe, chunk.memory, 3, pmatch, 0);
+    if (regRet != 0) {
+      fprintf(stderr, "Failed to find any matching substrings\n");
+    } else {
+      char * cond = strndup(&chunk.memory[pmatch[1].rm_so], pmatch[1].rm_eo - pmatch[1].rm_so);
+      char * temp = strndup(&chunk.memory[pmatch[2].rm_so], pmatch[2].rm_eo - pmatch[2].rm_so);
+      retstr = smprintf("<span color='#cc241d'>&#xf3b6;</span> %s° (%s)  ", temp, cond);
+      free(cond);
+      free(temp);
+    }
+  }
+  free(chunk.memory);
+  return retstr;
+}
+
 int
 main(void) {
   char * status;
@@ -230,6 +299,9 @@ main(void) {
   char * mpdStatus;
   char * mail;
   char * batt;
+  char * weather;
+  int checkWeatherCounter = WEATHER_CHECK_INT;
+  int reCompRet;
 
   // TODO: Weather
   // TODO: Volume?
@@ -240,6 +312,14 @@ main(void) {
   }
 
   numCores = sysconf(_SC_NPROCESSORS_ONLN);
+  curl = curl_easy_init();
+  reCompRet = regcomp(&weatherRe,
+                      "<title>Currently: ([a-zA-Z ]+): ([0-9]+)[C,F]</title>",
+                      REG_EXTENDED);
+  if (reCompRet != 0) {
+    fprintf(stderr, "dwmstatus: failed to compile weather regex\n");
+    return 1;
+  }
 
   for (;;sleep(5)) {
     sysAvg = getLoadAvg();
@@ -256,8 +336,13 @@ main(void) {
       batt = getBatt(BATT_PATH);
     }
 
-    status = smprintf("%s%s%s%s",
-                      mail, batt, mpdStatus, sysAvg);
+    if (checkWeatherCounter >= WEATHER_CHECK_INT) {
+      checkWeatherCounter = 0;
+      weather = getWeather();
+    }
+
+    status = smprintf("%s%s%s%s%s",
+                      mail, weather, batt, mpdStatus, sysAvg);
     setStatus(status);
     free(sysAvg);
 
@@ -274,8 +359,10 @@ main(void) {
     }
 
     free(status);
+    checkWeatherCounter += 5;
   }
 
+  curl_easy_cleanup(curl);
   XCloseDisplay(dpy);
 
   return 0;
