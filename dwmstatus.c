@@ -241,7 +241,7 @@ main(void) {
 
   numCores = sysconf(_SC_NPROCESSORS_ONLN);
 
-  for (;;sleep(10)) {
+  for (;;sleep(5)) {
     sysAvg = getLoadAvg();
 
     if (checkMPD) {
