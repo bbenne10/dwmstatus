@@ -11,6 +11,12 @@ Included:
 * **mail:** As reported by notmuch
 * **media:** As reported by mpd/mopidy
 
+## Presumptions
+
+Because this is tailored to my machine, I assume you're using my dwm. If not, you'll need a version of
+dwm patched with pango (**not XFT**). In addition, you'll need to change the drawing of the statusbar
+to use `pango_layout_set_markup` and `pango_xft_render_layout`, as I believe the current patch floating around does not do this by default.
+
 ## Building
 
 * Clone this repository and cd into it
