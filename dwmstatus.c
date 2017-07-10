@@ -180,7 +180,7 @@ getMpd() {
     artist = smprintf("%s",mpd_song_get_tag(song, MPD_TAG_ARTIST, 0));
 
     mpd_song_free(song);
-    retstr = smprintf("<span color='#00ff00'>&#xf286;</span> %s - %s  ", artist, title);
+    retstr = smprintf("<span color='#b8bb26'>&#xf025;</span> %s - %s  ", artist, title);
     free((char*)title);
     free((char*)artist);
   } else {
@@ -213,7 +213,7 @@ getMail() {
     }
 
     if (count > 0) {
-      retstr = smprintf("<span color='#ff00ff'>&#xf0e0;</span>  ");
+      retstr = smprintf("<span color='#fb4934'>&#xf0e0;</span>  ");
     } else {
       retstr = "";
     }
