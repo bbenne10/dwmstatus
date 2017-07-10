@@ -88,7 +88,7 @@ getBatt(char *base) {
     if (co != NULL) {
       free(co);
     }
-    fprintf(stderr, "No battery found");
+    fprintf(stderr, "No battery found\n");
     checkBatt = 0;
     return smprintf("");
   }
@@ -99,7 +99,7 @@ getBatt(char *base) {
     co = readLineFromFile(base, "energy_full_design");
     if (co == NULL) {
       checkBatt = 0;
-      fprintf(stderr, "No battery full file found");
+      fprintf(stderr, "No battery full file found\n");
       return smprintf("");
     }
   }
@@ -111,7 +111,7 @@ getBatt(char *base) {
     co = readLineFromFile(base, "energy_now");
     if (co == NULL) {
       checkBatt = 0;
-      fprintf(stderr, "No battery now file found");
+      fprintf(stderr, "No battery now file found\n");
       return smprintf("");
     }
   }
@@ -120,7 +120,7 @@ getBatt(char *base) {
 
   if (remcap < 0 || descap < 0) {
     checkBatt = 0;
-    fprintf(stderr, "Invalid battery range found");
+    fprintf(stderr, "Invalid battery range found\n");
     return smprintf("");
   }
 
