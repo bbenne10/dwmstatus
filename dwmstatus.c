@@ -28,7 +28,6 @@ static int numCores;
 static int checkMail = 1;
 static int checkMPD = 1;
 static int checkBatt = 1;
-static CURL *curl;
 static regex_t weatherRe;
 
 struct MemoryStruct {
@@ -69,6 +68,7 @@ readLineFromFile(char *base, char *file) {
   path = smprintf("%s/%s", base, file);
   fd = fopen(path, "r");
   if (fd == NULL) {
+    free(path);
     return NULL;
   }
   free(path);
@@ -199,6 +199,7 @@ getMpd() {
     retstr = smprintf("");
   }
 
+  mpd_status_free(theStatus);
   mpd_response_finish(conn);
   mpd_connection_free(conn);
   return retstr;
@@ -208,31 +209,31 @@ char *
 getMail() {
   notmuch_database_t *db;
   notmuch_status_t status = notmuch_database_open(
-                                                  NM_DB_PATH, NOTMUCH_DATABASE_MODE_READ_ONLY, &db);
-  notmuch_query_t * query;
-  unsigned int count = 0;
-  char * retstr = smprintf("");
-
+		  NM_DB_PATH, NOTMUCH_DATABASE_MODE_READ_ONLY, &db);
   if (status != NOTMUCH_STATUS_SUCCESS) {
     fprintf(stderr, "Failed to open nm database\n");
     checkMail = 0;
+    return smprintf("");
   } else {
+    notmuch_query_t * query;
+    unsigned int count = 0;
+
     query = notmuch_query_create(db, "tag:inbox and tag:unread");
     status = notmuch_query_count_messages_st(query, &count);
     if (status != NOTMUCH_STATUS_SUCCESS) {
       fprintf(stderr, "Failed to issue count query\n");
       checkMail = 0;
+      return smprintf("");
     }
 
     if (count > 0) {
-      retstr = smprintf("<span color='#fb4934'>&#xf0e0;</span>  ");
+      notmuch_database_destroy(db);
+      return smprintf("<span color='#fb4934'>&#xf0e0;</span>  ");
     } else {
-      retstr = "";
+      notmuch_database_destroy(db);
+      return smprintf("");
     }
-    notmuch_database_close(db);
   }
-
-  return retstr;
 }
 
 static size_t
@@ -258,9 +259,10 @@ char *
 getWeather() {
   char weatherURI[128];
   struct MemoryStruct chunk;
+  CURL * curl = curl_easy_init();
+  curl_global_init(CURL_GLOBAL_ALL);
   CURLcode res;
 
-  char * retstr = smprintf("");
   chunk.memory = malloc(1);
   chunk.size = 0;
 
@@ -273,13 +275,16 @@ getWeather() {
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
 
   res = curl_easy_perform(curl);
+
+  char * retstr;
   if (res != CURLE_OK) {
     fprintf(stderr, "Failed to perform request to weather URI\n");
+    retstr = smprintf("");
   } else {
     regmatch_t pmatch[3];
-    int regRet = regexec(&weatherRe, chunk.memory, 3, pmatch, 0);
-    if (regRet != 0) {
+    if (regexec(&weatherRe, chunk.memory, 3, pmatch, 0) != 0) {
       fprintf(stderr, "Failed to find any matching substrings\n");
+      retstr = smprintf("");
     } else {
       char * cond = strndup(&chunk.memory[pmatch[1].rm_so], pmatch[1].rm_eo - pmatch[1].rm_so);
       char * temp = strndup(&chunk.memory[pmatch[2].rm_so], pmatch[2].rm_eo - pmatch[2].rm_so);
@@ -289,6 +294,8 @@ getWeather() {
     }
   }
   free(chunk.memory);
+  curl_easy_cleanup(curl);
+  curl_global_cleanup();
   return retstr;
 }
 
@@ -312,7 +319,6 @@ main(void) {
   }
 
   numCores = sysconf(_SC_NPROCESSORS_ONLN);
-  curl = curl_easy_init();
   reCompRet = regcomp(&weatherRe,
                       "<title>Currently: ([a-zA-Z ]+): ([0-9]+)[C,F]</title>",
                       REG_EXTENDED);
@@ -324,46 +330,26 @@ main(void) {
   for (;;sleep(5)) {
     sysAvg = getLoadAvg();
 
-    if (checkMPD) {
-      mpdStatus = getMpd();
-    }
-
-    if (checkMail) {
-      mail = getMail();
-    }
-
-    if (checkBatt) {
-      batt = getBatt(BATT_PATH);
-    }
+    mpdStatus = checkMPD ? getMpd() : smprintf("");
+    mail = checkMail ? getMail() : smprintf("");
+    batt = checkBatt ? getBatt(BATT_PATH) : smprintf("");
 
     if (checkWeatherCounter >= WEATHER_CHECK_INT) {
       checkWeatherCounter = 0;
       weather = getWeather();
     }
 
-    status = smprintf("%s%s%s%s%s",
-                      mail, weather, batt, mpdStatus, sysAvg);
+    status = smprintf("%s%s%s%s%s", mail, weather, batt, mpdStatus, sysAvg);
     setStatus(status);
     free(sysAvg);
 
-    if (mpdStatus != NULL && strcmp(mpdStatus, "")) {
-      free(mpdStatus);
-    }
-
-    if (mail != NULL && strcmp(mail, "")) {
-      free(mail);
-    }
-
-    if (batt != NULL && strcmp(batt, "")) {
-      free(batt);
-    }
-
+    free(mpdStatus);
+    free(mail);
+    free(batt);
     free(status);
+
     checkWeatherCounter += 5;
   }
-
-  curl_easy_cleanup(curl);
   XCloseDisplay(dpy);
-
   return 0;
 }
