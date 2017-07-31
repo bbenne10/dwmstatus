@@ -74,6 +74,7 @@ readLineFromFile(char *base, char *file) {
   free(path);
 
   if (fgets(line, sizeof(line)-1, fd) == NULL) {
+    fclose(fd);
     return NULL;
   }
   fclose(fd);
