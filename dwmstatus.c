@@ -308,10 +308,9 @@ main(void) {
   char * mail;
   char * batt;
   char * weather;
-  int checkWeatherCounter = WEATHER_CHECK_INT;
+  int checkCounter = WEATHER_CHECK_INT;
   int reCompRet;
 
-  // TODO: Weather
   // TODO: Volume?
 
   if (!(dpy = XOpenDisplay(NULL))) {
@@ -335,9 +334,14 @@ main(void) {
     mail = checkMail ? getMail() : smprintf("");
     batt = checkBatt ? getBatt(BATT_PATH) : smprintf("");
 
-    if (checkWeatherCounter >= WEATHER_CHECK_INT) {
-      checkWeatherCounter = 0;
+    if (checkCounter >= WEATHER_CHECK_INT) {
+      checkCounter = 0;
       weather = getWeather();
+
+      // Use checkCounter to reset and check for mail/batt/mpd again
+      checkMPD = 1;
+      checkMail = 1;
+      checkBatt = 1;
     }
 
     status = smprintf("%s%s%s%s%s", mail, weather, batt, mpdStatus, sysAvg);
@@ -349,7 +353,7 @@ main(void) {
     free(batt);
     free(status);
 
-    checkWeatherCounter += 5;
+    checkCounter += 5;
   }
   XCloseDisplay(dpy);
   return 0;
