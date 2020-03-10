@@ -1,25 +1,18 @@
 NAME = dwmstatus
 VERSION = 1.2
 
+deps = glib-2.0 gio-2.0 x11 libcurl
+
 # Customize below to fit your system
 
 # paths
 PREFIX = /usr/local
 MANPREFIX = ${PREFIX}/share/man
 
-X11INC = /usr/X11R6/include
-X11LIB = /usr/X11R6/lib
-
-# includes and libs
-INCS = -I. -I/usr/include -I${X11INC}
-LIBS = -L/usr/lib -lc -L${X11LIB} -lX11 -lmpdclient -lnotmuch -lcurl
-
 # flags
 CPPFLAGS = -DVERSION=\"${VERSION}\"
-CFLAGS = -g -std=c99 -pedantic -Wall -O0 -DMPD ${INCS} ${CPPFLAGS}
-#CFLAGS = -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS}
-LDFLAGS = -g ${LIBS}
-#LDFLAGS = -s ${LIBS}
+CFLAGS = -std=c99 -pedantic -Wall -O0 -g $(shell pkg-config --cflags $(deps))
+LDFLAGS = $(shell pkg-config --libs $(deps))
 
 # Solaris
 #CFLAGS = -fast ${INCS} -DVERSION=\"${VERSION}\"

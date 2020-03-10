@@ -1,32 +1,34 @@
 #define _DEFAULT_SOURCE
-#include <unistd.h>
+#include <X11/Xlib.h>
+#include <curl/curl.h>
+#include <gio/gio.h>
+#include <glib.h>
 #include <regex.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/time.h>
-#include <time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
 #include <unistd.h>
 
-#include <curl/curl.h>
-#include <X11/Xlib.h>
-#include <mpd/client.h>
-#include <notmuch.h>
+#define NM_UNREAD_QUERY "tag:inbox and tag:unread and not tag:archived"
 
-#define NM_DB_PATH "/home/bryan/.mail/work"
 #define BATT_PATH "/sys/class/power_supply/BAT0"
+
+#define MEDIA_PLAYER_BUS_NAME "org.mpris.MediaPlayer2.spotifyd"
+
 #define WEATHER_CHECK_INT 1800
 #define WEATHER_CHECK_LOC "30032"
 #define WEATHER_CHECK_METRIC 0
 
 static Display *dpy;
 static int numCores;
-static int checkMail = 1;
-static int checkMPD = 1;
+static int checkMedia = 1;
 static int checkBatt = 1;
 static regex_t weatherRe;
 
@@ -165,78 +167,6 @@ getLoadAvg() {
   return smprintf("<span color='#b16286'>&#xf0e7;</span> %d%%", (int)((avgs[0] * 100 / numCores)));
 }
 
-char *
-getMpd() {
-  struct mpd_song * song = NULL;
-  const char * title = NULL;
-  const char * artist = NULL;
-  char * retstr = NULL;
-
-  struct mpd_connection * conn ;
-  if (!(conn = mpd_connection_new("localhost", 0, 30000)) || mpd_connection_get_error(conn)){
-    checkMPD = 0;
-    fprintf(stderr, "Could not connect to MPD");
-    return smprintf("");
-  }
-
-  mpd_command_list_begin(conn, true);
-  mpd_send_status(conn);
-  mpd_send_current_song(conn);
-  mpd_command_list_end(conn);
-
-  struct mpd_status* theStatus = mpd_recv_status(conn);
-
-  if ((theStatus) && (mpd_status_get_state(theStatus) == MPD_STATE_PLAY)) {
-    mpd_response_next(conn);
-    song = mpd_recv_song(conn);
-    title = smprintf("%s",mpd_song_get_tag(song, MPD_TAG_TITLE, 0));
-    artist = smprintf("%s",mpd_song_get_tag(song, MPD_TAG_ARTIST, 0));
-
-    mpd_song_free(song);
-    retstr = smprintf("<span color='#b8bb26'>&#xf025;</span> %s - %s  ", artist, title);
-    free((char*)title);
-    free((char*)artist);
-  } else {
-    retstr = smprintf("");
-  }
-
-  mpd_status_free(theStatus);
-  mpd_response_finish(conn);
-  mpd_connection_free(conn);
-  return retstr;
-}
-
-char *
-getMail() {
-  notmuch_database_t *db;
-  notmuch_status_t status = notmuch_database_open(
-		  NM_DB_PATH, NOTMUCH_DATABASE_MODE_READ_ONLY, &db);
-  if (status != NOTMUCH_STATUS_SUCCESS) {
-    fprintf(stderr, "Failed to open nm database\n");
-    checkMail = 0;
-    return smprintf("");
-  } else {
-    notmuch_query_t * query;
-    unsigned int count = 0;
-
-    query = notmuch_query_create(db, "tag:inbox and tag:unread");
-    status = notmuch_query_count_messages_st(query, &count);
-    if (status != NOTMUCH_STATUS_SUCCESS) {
-      fprintf(stderr, "Failed to issue count query\n");
-      checkMail = 0;
-      return smprintf("");
-    }
-
-    if (count > 0) {
-      notmuch_database_destroy(db);
-      return smprintf("<span color='#fb4934'>&#xf0e0;</span>  ");
-    } else {
-      notmuch_database_destroy(db);
-      return smprintf("");
-    }
-  }
-}
-
 static size_t
 weatherWriteCB(void *contents, size_t size, size_t nmemb, void * userp) {
   size_t realsize = size * nmemb;
@@ -254,6 +184,69 @@ weatherWriteCB(void *contents, size_t size, size_t nmemb, void * userp) {
   mem->memory[mem->size] = 0;
 
   return realsize;
+}
+
+char *
+getMedia () {
+  GError * error = NULL;
+  GDBusConnection * bus;
+  GVariant * result;
+  GVariant * props;
+  gchar * * artists = NULL;
+  gchar * artist = NULL;
+  gchar * title = NULL;
+
+  bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
+
+  if (!bus) {
+    if (error) {
+      fprintf(stderr, "%s\n", error->message);
+      g_error_free(error);
+    }
+    checkMedia = 0;
+    return "";
+  }
+
+  result = g_dbus_connection_call_sync(
+    bus,
+    MEDIA_PLAYER_BUS_NAME,
+    "/org/mpris/MediaPlayer2",
+    "org.freedesktop.DBus.Properties",
+    "Get",
+    g_variant_new(
+      "(ss)",
+      "org.mpris.MediaPlayer2.Player",
+      "Metadata"),
+    G_VARIANT_TYPE("(v)"),
+    G_DBUS_CALL_FLAGS_NONE,
+    -1,
+    NULL,
+    &error);
+
+  if (!result) {
+    if (error) {
+      fprintf(stderr, "%s\n", error->message);
+      g_error_free(error);
+    }
+    checkMedia = 0;
+    return "";
+  }
+
+  g_variant_get(result, "(v)", &props);
+  g_variant_lookup(props, "xesam:artist", "^a&s", &artists);
+  g_variant_lookup(props, "xesam:title", "s", &title);
+
+  if (artists) {
+    artist = g_strjoinv(", ", artists);
+  } else {
+    artist = g_strdup("(UNKNOWN)");
+  }
+
+  if (!title) {
+    title = g_strdup("UNKNOWN");
+  }
+
+  return smprintf("<span color='#00ff00'>&#xf3b6;</span> %s - %s ", artist, title);
 }
 
 char *
@@ -304,8 +297,7 @@ int
 main(void) {
   char * status;
   char * sysAvg;
-  char * mpdStatus;
-  char * mail;
+  char * mediaInfo;
   char * batt;
   char * weather;
   int checkCounter = WEATHER_CHECK_INT;
@@ -330,26 +322,23 @@ main(void) {
   for (;;sleep(5)) {
     sysAvg = getLoadAvg();
 
-    mpdStatus = checkMPD ? getMpd() : smprintf("");
-    mail = checkMail ? getMail() : smprintf("");
+    mediaInfo = checkMedia ? getMedia() : smprintf("");
     batt = checkBatt ? getBatt(BATT_PATH) : smprintf("");
 
     if (checkCounter >= WEATHER_CHECK_INT) {
       checkCounter = 0;
       weather = getWeather();
 
-      // Use checkCounter to reset and check for mail/batt/mpd again
-      checkMPD = 1;
-      checkMail = 1;
+      // Use checkCounter to reset and check for batt/media again
+      checkMedia = 1;
       checkBatt = 1;
     }
 
-    status = smprintf("%s%s%s%s%s", mail, weather, batt, mpdStatus, sysAvg);
+    status = smprintf("%s%s%s%s", weather, batt, mediaInfo, sysAvg);
     setStatus(status);
     free(sysAvg);
 
-    free(mpdStatus);
-    free(mail);
+    free(mediaInfo);
     free(batt);
     free(status);
 
